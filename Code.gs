@@ -78,6 +78,7 @@ SpreadsheetApp.flush();
   logRun_("CSV Imported", `Imported ${latestFile.getName()} with ${csvData.length - 1} student rows.`);
 }
 
+
 /*************************************************
  * SETTINGS / LOGGING
  *************************************************/
@@ -275,6 +276,48 @@ function getSpreadsheet_() {
 
   const id = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
   return SpreadsheetApp.openById(id);
+}
+
+function getStatusRange_(name) {
+  const ss = getSpreadsheet_();
+
+  // Try the named range first (works in normal/click context)
+  const named = ss.getRangeByName(name);
+  if (named) return named;
+
+  // Fallback for trigger context: look up the cell address directly
+  const cellMap = {
+    "Status_FileFound_Icon": "G28",
+    "Status_FileFound_Text": "J28",
+    "Status_File_Pill": "I28",
+    "Status_PacketsCreated_Icon": "G29",
+    "Status_Packets_Pill": "I29",
+    "Status_Packets_ProgressBar": "J29:L29",
+    "Status_Packets_ProgressPercent": "M29",
+    "Status_PacketsCreated_Detail": "I30:N30",
+    "Status_LastRun_Icon": "G30",
+    "Status_LastRun": "H31"
+  };
+
+  const address = cellMap[name];
+  if (!address) return null;
+
+  return ss.getSheetByName("Dashboard").getRange(address);
+}
+
+function setStatus_(name, value) {
+  const range = getStatusRange_(name);
+  if (range) range.setValue(value);
+}
+
+function setStatusFormula_(name, formula) {
+  const range = getStatusRange_(name);
+  if (range) range.setFormula(formula);
+}
+
+function clearStatus_(name) {
+  const range = getStatusRange_(name);
+  if (range) range.clearContent();
 }
 
 /*************************************************
@@ -508,7 +551,7 @@ function generateTeacherPdfBatch7() {
 function generateTeacherPdfs_(options) {
   options = options || {};
 
-  const ss = getSpreadsheet_();;
+  const ss = getSpreadsheet_();
   
 
 
@@ -697,14 +740,14 @@ if (hasUnprocessedTeachers_()) {
     skippedCount
   );
 
-  const detailRange = ss.getRangeByName("Status_PacketsCreated_Detail");
-  if (detailRange) {
-    detailRange.setValue(
-      "Working… " +
-      studentsProcessed +
-      " letters generated in this batch. More to come."
-    );
-  }
+  setStatus_(
+    "Status_PacketsCreated_Detail",
+    "Working… " +
+    studentsProcessed +
+    " letters generated in this batch. More to come."
+  );
+
+
 } else {
   updatePacketStatus_(packetsCreated, studentsProcessed, skippedCount);
 }
@@ -1073,29 +1116,18 @@ function testStatusNamedRanges() {
 }
 
 function updatePacketStatus_(packetsCreated, studentsProcessed, skippedCount) {
-  const ss = getSpreadsheet_();
+  setStatus_("Status_PacketsCreated_Icon", "✓");
+  setStatus_("Status_Packets_Pill", "COMPLETE");
 
-  const setVal = (name, val) => {
-    const r = ss.getRangeByName(name);
-    if (r) r.setValue(val);
-  };
-  const setForm = (name, formula) => {
-    const r = ss.getRangeByName(name);
-    if (r) r.setFormula(formula);
-  };
-
-  setVal("Status_PacketsCreated_Icon", "✓");
-  setVal("Status_Packets_Pill", "COMPLETE");
-
-  setVal("Status_PacketsCreated_Detail",
+  setStatus_("Status_PacketsCreated_Detail",
     packetsCreated + " teacher packet(s) generated • " +
     studentsProcessed + " student(s) processed" +
     (skippedCount ? " • " + skippedCount + " skipped" : ""));
 
-  setForm("Status_Packets_ProgressBar",
+  setStatusFormula_("Status_Packets_ProgressBar",
     '=SPARKLINE(1, {"charttype","bar";"max",1;"color1","#1A73E8"})');
 
-  setVal("Status_Packets_ProgressPercent", "100%");
+  setStatus_("Status_Packets_ProgressPercent", "100%");
 
   const timestamp = Utilities.formatDate(
     new Date(),
@@ -1103,57 +1135,36 @@ function updatePacketStatus_(packetsCreated, studentsProcessed, skippedCount) {
     "M/d/yyyy h:mm a"
   );
 
-  setVal("Status_LastRun", timestamp);
-  setVal("Status_LastRun_Icon", "◷");
+  setStatus_("Status_LastRun", timestamp);
+  setStatus_("Status_LastRun_Icon", "◷");
 }
 
 function updatePacketProgress_(packetsCreated, totalPackets, studentsProcessed, skippedCount) {
-  const ss = getSpreadsheet_();
+  setStatus_("Status_PacketsCreated_Icon", "⏳");
+  setStatus_("Status_Packets_Pill", "IN PROGRESS");
 
-  const setVal = (name, val) => {
-    const r = ss.getRangeByName(name);
-    if (r) r.setValue(val);
-  };
-  const setForm = (name, formula) => {
-    const r = ss.getRangeByName(name);
-    if (r) r.setFormula(formula);
-  };
-
-  setVal('Status_PacketsCreated_Icon', "⏳");
-  setVal("Status_Packets_Pill", "IN PROGRESS");
-  setVal('Status_PacketsCreated_Detail',
-    packetsCreated + ' of ' + totalPackets + ' teacher packet(s) created • ' +
-    studentsProcessed + ' student(s) processed so far' +
-    (skippedCount ? ' • ' + skippedCount + ' skipped' : ''));
+  setStatus_("Status_PacketsCreated_Detail",
+    packetsCreated + " of " + totalPackets + " teacher packet(s) created • " +
+    studentsProcessed + " student(s) processed so far" +
+    (skippedCount ? " • " + skippedCount + " skipped" : ""));
 
   const percent = totalPackets ? packetsCreated / totalPackets : 0;
 
-  setForm("Status_Packets_ProgressBar",
+  setStatusFormula_("Status_Packets_ProgressBar",
     '=SPARKLINE(' + percent + ', {"charttype","bar";"max",1;"color1","#1A73E8"})');
-  setVal("Status_Packets_ProgressPercent", Math.round(percent * 100) + "%");
+
+  setStatus_("Status_Packets_ProgressPercent", Math.round(percent * 100) + "%");
 }
-
 function resetPacketStatus_() {
-  const ss = getSpreadsheet_();
+  setStatus_("Status_PacketsCreated_Icon", "⏳");
+  setStatus_("Status_Packets_Pill", "IN PROGRESS");
 
-  const setVal = (name, val) => {
-    const r = ss.getRangeByName(name);
-    if (r) r.setValue(val);
-  };
-  const clear = (name) => {
-    const r = ss.getRangeByName(name);
-    if (r) r.clearContent();
-  };
+  setStatus_("Status_PacketsCreated_Detail", "");
+  clearStatus_("Status_Packets_ProgressBar");
+  setStatus_("Status_Packets_ProgressPercent", "");
 
-  setVal("Status_PacketsCreated_Icon", "⏳");
-  setVal("Status_Packets_Pill", "IN PROGRESS");
-
-  setVal("Status_PacketsCreated_Detail", "");
-  clear("Status_Packets_ProgressBar");
-  setVal("Status_Packets_ProgressPercent", "");
-
-  setVal("Status_LastRun", "");
-  setVal("Status_LastRun_Icon", "");
+  setStatus_("Status_LastRun", "");
+  setStatus_("Status_LastRun_Icon", "");
 }
 
 function setPacketErrorStatus_(error) {
