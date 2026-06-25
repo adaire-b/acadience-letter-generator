@@ -1,4 +1,4 @@
-*
+/*
 ACADIENCE LETTER GENERATOR
 
 Primary user function:
@@ -16,11 +16,21 @@ Parked:
 
 */
 
+/*
+FINAL CLEANUP BEFORE RELEASE:
+- Protect Dashboard, Set-up Wizard, Help, Skipped Students, and Run Log.
+- Allow editing only in intended input cells.
+- Hide backend sheets: Settings, Raw Import, Processed Data, Benchmark Goals.
+- Test all buttons from a fresh copied file.
+- Create demo version with fake student data.
+- Prepare portfolio/presentation summary.
+*/
+
 /*************************************************
  * WORKFLOW FUNCTIONS
  *************************************************/
 function importLatestCsv() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
 
   const settings = getSettings_();
   const uploadFolderId = settings["Upload Folder ID"];
@@ -49,9 +59,9 @@ function importLatestCsv() {
   throw new Error("No CSV files found in the Uploads folder.");
 }
 
-setDashboardStatus_("Acadience File Found", "✓", "Most recent Acadience file located.");
+setDashboardStatus_("Acadience File Found", "✓", "Acadience CSV imported.");
 
-ss.getRangeByName("Status_File_Pill").setValue("READY");
+safeSetNamedRange_("Status_File_Pill", "READY");
 
 SpreadsheetApp.flush();
 
@@ -72,7 +82,7 @@ SpreadsheetApp.flush();
  * SETTINGS / LOGGING
  *************************************************/
 function getSettings_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
   const sheet = ss.getSheetByName("Settings");
 
   const values = sheet.getDataRange().getValues();
@@ -92,7 +102,7 @@ function getSettings_() {
 
 
 function logRun_(status, message) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
   const sheet = ss.getSheetByName("Run Log");
 
   if (sheet.getLastRow() === 0) {
@@ -106,7 +116,7 @@ function logRun_(status, message) {
  * DATA PROCESSING
  *************************************************/
 function processImportedData() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
 
   const rawSheet = ss.getSheetByName("Raw Import");
   const processedSheet = ss.getSheetByName("Processed Data");
@@ -115,7 +125,7 @@ function processImportedData() {
 
 
 const selectedWindow = normalizeWindow_(
-  ss.getRangeByName("Assessment_Window").getValue()
+  ss.getSheetByName("Dashboard").getRange("L11").getValue()
 );
 
   if (!selectedWindow) {
@@ -246,7 +256,7 @@ if (!window && ["K", "1", "2", "3"].includes(String(grade).trim())) {
 }
 
 function runLetterWorkflow() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
   const processedSheet = ss.getSheetByName("Processed Data");
 
   const hasProcessedData = processedSheet.getLastRow() > 1;
@@ -257,6 +267,14 @@ function runLetterWorkflow() {
   }
 
   generateTeacherPdfBatch7();
+}
+
+function getSpreadsheet_() {
+  const active = SpreadsheetApp.getActiveSpreadsheet();
+  if (active) return active;
+
+  const id = PropertiesService.getScriptProperties().getProperty("SPREADSHEET_ID");
+  return SpreadsheetApp.openById(id);
 }
 
 /*************************************************
@@ -277,7 +295,7 @@ function getValue_(row, headerMap, headerName) {
 }
 
 function createBenchmarkGoalMap_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
   const sheet = ss.getSheetByName("Benchmark Goals");
   const values = sheet.getDataRange().getValues();
 
@@ -352,13 +370,19 @@ function clearDataKeepHeaders_(sheet) {
     sheet.getRange(2, 1, lastRow - 1, lastColumn).clearContent();
   }
 }
+
+function storeIdNow() {
+  PropertiesService.getScriptProperties()
+    .setProperty("SPREADSHEET_ID", SpreadsheetApp.getActiveSpreadsheet().getId());
+  Logger.log("Stored ID: " + SpreadsheetApp.getActiveSpreadsheet().getId());
+}
 /*************************************************
  * LETTER GENERATION
  *************************************************/
 function generateTestLetter() {
   Logger.log("Starting generateTestLetter...");
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
 
   const settings = getSettings_();
   const templateDocId = settings["Template Doc ID"];
@@ -448,6 +472,25 @@ function startTeacherPacketWorkflow_() {
   });
 }
 
+function testContinue() {
+  continuePacketGeneration_();
+}
+
+function continuePacketGeneration_() {
+  generateTeacherPdfs_({
+    limitTeachers: null,
+    markGenerated: true,
+    prefix: ""
+  });
+
+  if (hasUnprocessedTeachers_()) {
+    ScriptApp.newTrigger("continuePacketGeneration_")
+      .timeBased()
+      .after(60 * 1000)
+      .create();
+  }
+}
+
 function generateTeacherPdfs() {
   startTeacherPacketWorkflow_();
 }
@@ -465,7 +508,7 @@ function generateTeacherPdfBatch7() {
 function generateTeacherPdfs_(options) {
   options = options || {};
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();;
   
 
 
@@ -473,19 +516,21 @@ function generateTeacherPdfs_(options) {
 
 try {
 
+const startTime = new Date().getTime();
+
 const settings = getSettings_();
+const dash = ss.getSheetByName("Dashboard");
+const schoolName = dash.getRange("K17").getValue();
+const signerName = dash.getRange("K20").getValue();
+const letterDate = dash.getRange("L14").getDisplayValue();
+  
 
   const templateDocId = settings["Template Doc ID"];
   const outputFolderId = settings["Output Folder ID"];
 
   const outputFolder = DriveApp.getFolderById(outputFolderId);
   const templateDoc = DocumentApp.openById(templateDocId);
-  const templateBody = templateDoc.getBody();
-
-  
- const schoolName = ss.getRangeByName("School_Name").getValue();
-const signerName = ss.getRangeByName("Signer_Name").getValue();
-const letterDate = ss.getRangeByName("Letter_Date").getDisplayValue();
+  const templateBody = templateDoc.getBody();  
 
   const processedSheet = ss.getSheetByName("Processed Data");
   const data = processedSheet.getDataRange().getValues();
@@ -539,7 +584,13 @@ if (options.startTeacherIndex !== undefined || options.limitTeachers) {
   teacherNames = teacherNames.slice(0, options.limitTeachers);
 }
 
-  teacherNames.forEach(teacherName => {
+  for (let t = 0; t < teacherNames.length; t++) {
+    const teacherName = teacherNames[t];
+
+    if (new Date().getTime() - startTime > 270000) {
+      break;
+    }
+
     const students = teacherGroups[teacherName];
 
     students.sort((a, b) => {
@@ -607,6 +658,9 @@ updatePacketProgress_(
 );
 SpreadsheetApp.flush();
 
+
+
+
 /*
 V2 IDEA:
 Generate teacher packets as PDFs.
@@ -633,9 +687,9 @@ if (options.markGenerated) {
 }
 
 logRun_("Teacher Packet Generated", `Created ${docName} with ${students.length} letters.`);
-});
+}
 
-if (teacherNames.length < Object.keys(teacherGroups).length) {
+if (hasUnprocessedTeachers_()) {
   updatePacketProgress_(
     packetsCreated,
     Object.keys(teacherGroups).length,
@@ -643,13 +697,14 @@ if (teacherNames.length < Object.keys(teacherGroups).length) {
     skippedCount
   );
 
-  ss.getRangeByName("Status_PacketsCreated_Detail")
-    .setValue(
-      packetsCreated +
-      " of " +
-      Object.keys(teacherGroups).length +
-      " teacher packet(s) created • click Generate Teacher Packets again to continue"
+  const detailRange = ss.getRangeByName("Status_PacketsCreated_Detail");
+  if (detailRange) {
+    detailRange.setValue(
+      "Working… " +
+      studentsProcessed +
+      " letters generated in this batch. More to come."
     );
+  }
 } else {
   updatePacketStatus_(packetsCreated, studentsProcessed, skippedCount);
 }
@@ -669,6 +724,29 @@ return {
 
   throw error;
 }
+}
+
+function hasUnprocessedTeachers_() {
+  const ss = getSpreadsheet_();
+  const processedSheet = ss.getSheetByName("Processed Data");
+  const data = processedSheet.getDataRange().getValues();
+  const headers = data[0];
+  const rows = data.slice(1);
+  const headerMap = createHeaderMap_(headers);
+
+  return rows.some(row => {
+    const generate = getValue_(row, headerMap, "Generate Letter");
+    const processed = getValue_(row, headerMap, "Letter Processed");
+
+    const shouldGenerate = (generate === true || String(generate).toLowerCase() === "true");
+    const notYetProcessed = !(processed === true || String(processed).toLowerCase() === "true");
+
+    return shouldGenerate && notYetProcessed;
+  });
+}
+
+function testHasUnprocessed() {
+  Logger.log("Unprocessed teachers remaining? " + hasUnprocessedTeachers_());
 }
 
 /*************************************************
@@ -730,7 +808,7 @@ function testLetterSetup() {
 }
 
 function testLastRunLocation() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
   const range = ss.getRangeByName("Status_LastRun");
 
   Logger.log(range.getSheet().getName());
@@ -738,7 +816,7 @@ function testLastRunLocation() {
 }
 
 function testPacketDetail() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
 
   ss.getRangeByName("Status_PacketsCreated_Detail")
     .setValue("TESTING PACKET DETAIL TEXT");
@@ -749,7 +827,7 @@ function testProgressBar() {
 }
 
 function testProgressRanges() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
 
   [
     "Status_Packets_ProgressBar",
@@ -758,6 +836,35 @@ function testProgressRanges() {
     const range = ss.getRangeByName(name);
     Logger.log(name + ": " + (range ? range.getSheet().getName() + "!" + range.getA1Notation() : "MISSING"));
   });
+}
+
+function testOneClickNow() {
+  generateParentLettersOneClick();
+}
+
+function diagnoseSchoolName() {
+  const ss = getSpreadsheet_();
+  Logger.log("Spreadsheet: " + (ss ? ss.getName() : "NULL"));
+  const range = ss.getRangeByName("School_Name");
+  Logger.log("School_Name range: " + (range ? range.getA1Notation() : "NULL"));
+  if (range) {
+    Logger.log("Value: " + range.getValue());
+  }
+}
+
+function diagnoseRanges() {
+  const ss = getSpreadsheet_();
+  ["School_Name", "Signer_Name", "Letter_Date"].forEach(name => {
+    const r = ss.getRangeByName(name);
+    Logger.log(name + ": " + (r ? r.getA1Notation() : "NULL"));
+  });
+}
+
+function diagnoseAssessment() {
+  const ss = getSpreadsheet_();
+  const r = ss.getRangeByName("Assessment_Window");
+  Logger.log("Assessment_Window: " + (r ? r.getA1Notation() : "NULL"));
+  if (r) Logger.log("Value: " + r.getValue());
 }
 
 /*************************************************
@@ -858,7 +965,7 @@ function replaceLogoPlaceholder_(body, logoFileId) {
  * DASHBOARD HELPERS
  *************************************************/
 function updateDashboardLinks() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
   const settings = getSettings_();
 
   const uploadCell = ss.getRangeByName("QuickLink_UploadFolder");
@@ -892,24 +999,15 @@ function openAcadienceUploadsFolder() {
 }
 
 function setDashboardStatus_(statusName, icon, text) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
 
   const statusMap = {
     "Acadience File Found": {
       icon: "Status_FileFound_Icon",
       text: "Status_FileFound_Text"
     },
-    "Data Imported": {
-      icon: "Status_DataImported_Icon",
-      text: "Status_DataImported_Text"
-    },
-    "Data Processed": {
-      icon: "Status_DataProcessed_Icon",
-      text: "Status_DataProcessed_Text"
-    },
     "Teacher Packets Created": {
-      icon: "Status_PacketsCreated_Icon",
-      text: "Status_PacketsCreated_Text"
+      icon: "Status_PacketsCreated_Icon"
     },
     "Last Run": {
       text: "Status_LastRun"
@@ -919,17 +1017,16 @@ function setDashboardStatus_(statusName, icon, text) {
   const target = statusMap[statusName];
   if (!target) return;
 
-  if (target.icon && icon !== null) {
-    ss.getRangeByName(target.icon).setValue(icon);
+  if (target.icon && icon !== null && icon !== undefined) {
+    safeSetNamedRange_(target.icon, icon);
   }
 
-  if (target.text) {
-    ss.getRangeByName(target.text).setValue(text);
+  if (target.text && text !== undefined) {
+    safeSetNamedRange_(target.text, text);
   }
 }
-
 function testDashboardNamedRanges() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
 
   Logger.log("Assessment Window: " + ss.getRangeByName("Assessment_Window").getValue());
   Logger.log("Letter Date: " + ss.getRangeByName("Letter_Date").getDisplayValue());
@@ -939,20 +1036,20 @@ function testDashboardNamedRanges() {
 
 function testDashboardStatus() {
   setDashboardStatus_("Acadience File Found", "✓", "Ready");
-  SpreadsheetApp.getActiveSpreadsheet().getRangeByName("Status_File_Pill").setValue("READY");
+  getSpreadsheet_().getRangeByName("Status_File_Pill").setValue("READY");
 
   setDashboardStatus_("Data Imported", "✓", "Imported");
   setDashboardStatus_("Data Processed", "✓", "Processed");
 
   setDashboardStatus_("Teacher Packets Created", "⏳", "Pending");
-  SpreadsheetApp.getActiveSpreadsheet().getRangeByName("Status_Packets_Pill").setValue("IN PROGRESS");
+  getSpreadsheet_().getRangeByName("Status_Packets_Pill").setValue("IN PROGRESS");
 
   setDashboardStatus_("Last Run", null, new Date());
-  SpreadsheetApp.getActiveSpreadsheet().getRangeByName("Status_LastRun_Icon").setValue("◷");
+  getSpreadsheet_().getRangeByName("Status_LastRun_Icon").setValue("◷");
 }
 
 function testStatusNamedRanges() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
 
   const names = [
     "Status_FileFound_Icon",
@@ -962,7 +1059,6 @@ function testStatusNamedRanges() {
     "Status_DataProcessed_Icon",
     "Status_DataProcessed_Text",
     "Status_PacketsCreated_Icon",
-    "Status_PacketsCreated_Text",
     "Status_PacketsCreated_Detail",
     "Status_LastRun",
     "Status_File_Pill",
@@ -977,28 +1073,29 @@ function testStatusNamedRanges() {
 }
 
 function updatePacketStatus_(packetsCreated, studentsProcessed, skippedCount) {
-  const ss = SpreadsheetApp.getActive();
+  const ss = getSpreadsheet_();
 
-  ss.getRangeByName("Status_PacketsCreated_Icon").setValue("✓");
-  ss.getRangeByName("Status_PacketsCreated_Text").setValue("Complete");
-  ss.getRangeByName("Status_Packets_Pill").setValue("COMPLETE");
+  const setVal = (name, val) => {
+    const r = ss.getRangeByName(name);
+    if (r) r.setValue(val);
+  };
+  const setForm = (name, formula) => {
+    const r = ss.getRangeByName(name);
+    if (r) r.setFormula(formula);
+  };
 
-  ss.getRangeByName("Status_PacketsCreated_Detail")
-    .setValue(
-      packetsCreated +
-      " teacher packet(s) generated • " +
-      studentsProcessed +
-      " student(s) processed" +
-      (skippedCount ? " • " + skippedCount + " skipped" : "")
-    );
+  setVal("Status_PacketsCreated_Icon", "✓");
+  setVal("Status_Packets_Pill", "COMPLETE");
 
-  ss.getRangeByName("Status_Packets_ProgressBar")
-    .setFormula(
-      '=SPARKLINE(1, {"charttype","bar";"max",1;"color1","#1A73E8"})'
-    );
+  setVal("Status_PacketsCreated_Detail",
+    packetsCreated + " teacher packet(s) generated • " +
+    studentsProcessed + " student(s) processed" +
+    (skippedCount ? " • " + skippedCount + " skipped" : ""));
 
-  ss.getRangeByName("Status_Packets_ProgressPercent")
-    .setValue("100%");
+  setForm("Status_Packets_ProgressBar",
+    '=SPARKLINE(1, {"charttype","bar";"max",1;"color1","#1A73E8"})');
+
+  setVal("Status_Packets_ProgressPercent", "100%");
 
   const timestamp = Utilities.formatDate(
     new Date(),
@@ -1006,66 +1103,68 @@ function updatePacketStatus_(packetsCreated, studentsProcessed, skippedCount) {
     "M/d/yyyy h:mm a"
   );
 
-  ss.getRangeByName("Status_LastRun").setValue(timestamp);
-  ss.getRangeByName("Status_LastRun_Icon").setValue("◷");
+  setVal("Status_LastRun", timestamp);
+  setVal("Status_LastRun_Icon", "◷");
 }
 
 function updatePacketProgress_(packetsCreated, totalPackets, studentsProcessed, skippedCount) {
-  const ss = SpreadsheetApp.getActive();
+  const ss = getSpreadsheet_();
 
-  ss.getRangeByName('Status_PacketsCreated_Icon').setValue("⏳");
-  ss.getRangeByName('Status_PacketsCreated_Text').setValue('Creating packets...');
-  ss.getRangeByName("Status_Packets_Pill").setValue("IN PROGRESS");
-  ss.getRangeByName('Status_PacketsCreated_Detail')
-    .setValue(
-      packetsCreated +
-      ' of ' +
-      totalPackets +
-      ' teacher packet(s) created • ' +
-      studentsProcessed +
-      ' student(s) processed so far' +
-      (skippedCount ? ' • ' + skippedCount + ' skipped' : '')
-    );
+  const setVal = (name, val) => {
+    const r = ss.getRangeByName(name);
+    if (r) r.setValue(val);
+  };
+  const setForm = (name, formula) => {
+    const r = ss.getRangeByName(name);
+    if (r) r.setFormula(formula);
+  };
+
+  setVal('Status_PacketsCreated_Icon', "⏳");
+  setVal("Status_Packets_Pill", "IN PROGRESS");
+  setVal('Status_PacketsCreated_Detail',
+    packetsCreated + ' of ' + totalPackets + ' teacher packet(s) created • ' +
+    studentsProcessed + ' student(s) processed so far' +
+    (skippedCount ? ' • ' + skippedCount + ' skipped' : ''));
 
   const percent = totalPackets ? packetsCreated / totalPackets : 0;
 
-  ss.getRangeByName("Status_Packets_ProgressBar")
-    .setFormula(
-      '=SPARKLINE(' +
-      percent +
-      ', {"charttype","bar";"max",1;"color1","#1A73E8"})'
-    );
-
-  ss.getRangeByName("Status_Packets_ProgressPercent")
-    .setValue(Math.round(percent * 100) + "%");
+  setForm("Status_Packets_ProgressBar",
+    '=SPARKLINE(' + percent + ', {"charttype","bar";"max",1;"color1","#1A73E8"})');
+  setVal("Status_Packets_ProgressPercent", Math.round(percent * 100) + "%");
 }
 
 function resetPacketStatus_() {
-  const ss = SpreadsheetApp.getActive();
+  const ss = getSpreadsheet_();
 
-  ss.getRangeByName("Status_PacketsCreated_Icon").setValue("⏳");
-  ss.getRangeByName("Status_PacketsCreated_Text").setValue("Creating packets");
-  ss.getRangeByName("Status_Packets_Pill").setValue("IN PROGRESS");
+  const setVal = (name, val) => {
+    const r = ss.getRangeByName(name);
+    if (r) r.setValue(val);
+  };
+  const clear = (name) => {
+    const r = ss.getRangeByName(name);
+    if (r) r.clearContent();
+  };
 
-  ss.getRangeByName("Status_PacketsCreated_Detail").setValue("");
-  ss.getRangeByName("Status_Packets_ProgressBar").clearContent();
-  ss.getRangeByName("Status_Packets_ProgressPercent").setValue("");
+  setVal("Status_PacketsCreated_Icon", "⏳");
+  setVal("Status_Packets_Pill", "IN PROGRESS");
 
-  ss.getRangeByName("Status_LastRun").setValue("");
-  ss.getRangeByName("Status_LastRun_Icon").setValue("");
+  setVal("Status_PacketsCreated_Detail", "");
+  clear("Status_Packets_ProgressBar");
+  setVal("Status_Packets_ProgressPercent", "");
+
+  setVal("Status_LastRun", "");
+  setVal("Status_LastRun_Icon", "");
 }
 
 function setPacketErrorStatus_(error) {
-  const ss = SpreadsheetApp.getActive();
-
-  ss.getRangeByName('Status_PacketsCreated_Icon').setValue('❌');
-  ss.getRangeByName('Status_PacketsCreated_Text').setValue('Error');
-  ss.getRangeByName("Status_Packets_Pill").setValue("ERROR");
-  ss.getRangeByName('Status_PacketsCreated_Detail')
-    .setValue(String(error));
+  trySetNamedRange_("Status_PacketsCreated_Icon", "❌");
+  trySetNamedRange_("Status_Packets_Pill", "ERROR");
+  trySetNamedRange_("Status_PacketsCreated_Detail", String(error));
+  Logger.log("Packet error: " + error);
 }
+
 function appendSkippedStudent_(row, headerMap, reason) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getSpreadsheet_();
   const skippedSheet = ss.getSheetByName("Skipped Students");
 
   skippedSheet.appendRow([
@@ -1080,4 +1179,302 @@ function appendSkippedStudent_(row, headerMap, reason) {
     reason,
     new Date()
   ]);
+}
+
+function openHelpSheet() {
+  const ss = getSpreadsheet_();
+  const helpSheet = ss.getSheetByName("Help");
+
+  if (!helpSheet) {
+    SpreadsheetApp.getUi().alert(
+      'Help sheet not found. Please verify the sheet is named "Help".'
+    );
+    return;
+  }
+
+  helpSheet.activate();
+}
+function openDashboard() {
+  const ss = getSpreadsheet_();
+  const dashboardSheet = ss.getSheetByName("Dashboard");
+
+  if (!dashboardSheet) {
+    SpreadsheetApp.getUi().alert(
+      'Dashboard sheet not found.'
+    );
+    return;
+  }
+
+  dashboardSheet.activate();
+}
+
+function openALO() {
+  const url = "https://alo.acadiencelearning.org/login";
+
+  const html = HtmlService.createHtmlOutput(`
+    <div style="font-family: Arial, sans-serif; padding: 18px; text-align: center;">
+      <p style="font-size: 14px; margin-bottom: 16px;">
+        Click the button below to open Acadience Learning Online.
+      </p>
+
+      <a href="${url}" target="_blank"
+         style="
+           display: inline-block;
+           padding: 10px 18px;
+           background: #5E35B1;
+           color: white;
+           text-decoration: none;
+           border-radius: 8px;
+           font-weight: bold;
+         ">
+        Open ALO
+      </a>
+    </div>
+  `)
+  .setWidth(360)
+  .setHeight(160);
+
+  SpreadsheetApp.getUi().showModalDialog(html, "Open Acadience Learning Online");
+}
+
+function saveWizardSettings() {
+  const ss = getSpreadsheet_();
+
+  const wizardSheet = ss.getSheetByName("Set-up Wizard"); // change if needed
+
+  if (!wizardSheet) {
+    SpreadsheetApp.getUi().alert('Set-up Wizard sheet not found.');
+    return;
+  }
+
+  const uploadInput = ss.getRangeByName("Setup_UploadFolder").getDisplayValue().trim();
+  const outputInput = ss.getRangeByName("Setup_OutputFolder").getDisplayValue().trim();  const templateInput = ss.getRangeByName("Setup_TemplateDoc").getDisplayValue().trim();
+  const uploadFolderId = extractDriveFolderId_(uploadInput);
+  const outputFolderId = extractDriveFolderId_(outputInput);
+  const templateDocId = extractGoogleDocId_(templateInput);
+
+  if (!uploadFolderId || !outputFolderId || !templateDocId) {
+    SpreadsheetApp.getUi().alert(
+      "Please enter a valid Upload Folder, Output Folder, and Parent Letter Template URL or ID before saving."
+    );
+    return;
+  }
+
+  saveSettingValue_("Upload Folder ID", uploadFolderId);
+  saveSettingValue_("Output Folder ID", outputFolderId);
+  saveSettingValue_("Template Doc ID", templateDocId);
+
+  SpreadsheetApp.getUi().alert("Settings saved successfully.");
+}
+
+function extractDriveFolderId_(input) {
+  if (!input) return "";
+
+  const text = String(input).trim();
+
+  const folderMatch = text.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (folderMatch) return folderMatch[1];
+
+  return text;
+}
+
+function extractGoogleDocId_(input) {
+  if (!input) return "";
+
+  const text = String(input).trim();
+
+  const docMatch = text.match(/\/document\/d\/([a-zA-Z0-9_-]+)/);
+  if (docMatch) return docMatch[1];
+
+  return text;
+}
+
+function saveSettingValue_(settingName, settingValue) {
+  const ss = getSpreadsheet_();
+  const settingsSheet = ss.getSheetByName("Settings");
+
+  if (!settingsSheet) {
+    throw new Error("Settings sheet not found.");
+  }
+
+  const data = settingsSheet.getDataRange().getValues();
+
+  for (let r = 0; r < data.length; r++) {
+    if (String(data[r][0]).trim() === settingName) {
+      settingsSheet.getRange(r + 1, 2).setValue(settingValue);
+      return;
+    }
+  }
+
+  throw new Error('Setting not found: ' + settingName);
+}
+
+function openUploadFolder() {
+  const setup = requireSetupComplete_();
+  openUrl_(`https://drive.google.com/drive/folders/${setup.uploadFolderId}`);
+}
+
+function openOutputFolder() {
+  const setup = requireSetupComplete_();
+  openUrl_(`https://drive.google.com/drive/folders/${setup.outputFolderId}`);
+}
+
+function requireSetupComplete_() {
+  const setup = getSetupStatus_();
+
+  if (!setup.isComplete) {
+    openSetupWizard();
+    SpreadsheetApp.getUi().alert(
+      "Set-up is incomplete. Please complete the Set-up Wizard before continuing."
+    );
+    throw new Error("Set-up incomplete.");
+  }
+
+  return setup;
+}
+
+function getSetupStatus_() {
+  const uploadFolderId = getSettingValue_("Upload Folder ID");
+  const outputFolderId = getSettingValue_("Output Folder ID");
+  const templateDocId = getSettingValue_("Template Doc ID");
+
+  return {
+    uploadFolderId,
+    outputFolderId,
+    templateDocId,
+    isComplete: Boolean(uploadFolderId && outputFolderId && templateDocId)
+  };
+}
+
+function openRunLog() {
+  const ss = getSpreadsheet_();
+  const sheet = ss.getSheetByName("Run Log");
+
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert("Run Log sheet was not found.");
+    return;
+  }
+
+  ss.setActiveSheet(sheet);
+}
+
+function openSetupWizard() {
+  const ss = getSpreadsheet_();
+  const sheet = ss.getSheetByName("Set-up Wizard");
+
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert("Set-up Wizard sheet was not found.");
+    return;
+  }
+
+  ss.setActiveSheet(sheet);
+}
+
+function openSkippedStudents() {
+  const ss = getSpreadsheet_();
+  const sheet = ss.getSheetByName("Skipped Students");
+
+  if (!sheet) {
+    SpreadsheetApp.getUi().alert("Skipped Students sheet was not found.");
+    return;
+  }
+
+  ss.setActiveSheet(sheet);
+}
+
+function getSettingValue_(settingName) {
+  const settings = getSettings_();
+  return settings[settingName] || "";
+}
+
+function openUrl_(url) {
+  const html = HtmlService.createHtmlOutput(`
+    <script>
+      window.open("${url}", "_blank");
+      google.script.host.close();
+    </script>
+    <p>
+      If the page did not open,
+      <a href="${url}" target="_blank">click here</a>.
+    </p>
+  `)
+    .setWidth(300)
+    .setHeight(120);
+
+  SpreadsheetApp.getUi().showModalDialog(html, "Opening...");
+}
+
+function generateParentLettersOneClick() {
+  const ui = SpreadsheetApp.getUi();
+
+  try {
+
+    PropertiesService.getScriptProperties()
+      .setProperty("SPREADSHEET_ID", getSpreadsheet_().getId());
+
+    requireSetupComplete_();
+    
+
+    resetWorkflowStatus_();
+
+    importLatestCsv();
+
+    processImportedData();
+    setDashboardStatus_("Acadience File Found", "✓", "Acadience data processed.");
+
+    generateTeacherPdfs();
+
+    ui.alert(
+      "Teacher packet generation complete.\n\n" +
+      "Packets have been saved to the Output Folder."
+    );
+
+  } catch (error) {
+    setWorkflowErrorStatus_(error);
+
+    ui.alert(
+      "The Letter Generator could not finish.\n\n" +
+      error.message
+    );
+
+    throw error;
+  }
+}
+function resetWorkflowStatus_() {
+  const ss = getSpreadsheet_();
+
+  setDashboardStatus_("Acadience File Found", "⏳", "Looking for latest Acadience CSV...");
+  setDashboardStatus_("Teacher Packets Created", "—");
+
+  safeSetNamedRange_("Status_File_Pill", "CHECKING");
+  safeSetNamedRange_("Status_Packets_Pill", "WAITING");
+
+  safeSetNamedRange_("Status_PacketsCreated_Detail", "");
+  ss.getRangeByName("Status_Packets_ProgressBar").clearContent();
+  safeSetNamedRange_("Status_Packets_ProgressPercent", "");
+}
+
+function setWorkflowErrorStatus_(error) {
+  safeSetNamedRange_("Status_PacketsCreated_Icon", "❌");
+  safeSetNamedRange_("Status_Packets_Pill", "ERROR");
+  safeSetNamedRange_("Status_PacketsCreated_Detail", error.message || String(error));
+}
+
+function safeSetNamedRange_(rangeName, value) {
+  const ss = getSpreadsheet_();
+  const range = ss.getRangeByName(rangeName);
+
+  if (!range) {
+    throw new Error("Missing named range: " + rangeName);
+  }
+
+  range.setValue(value);
+}
+
+function trySetNamedRange_(rangeName, value) {
+  const ss = getSpreadsheet_();
+  const range = ss.getRangeByName(rangeName);
+  if (range) {
+    range.setValue(value);
+  }
 }
