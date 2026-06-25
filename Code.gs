@@ -24,6 +24,22 @@ FINAL CLEANUP BEFORE RELEASE:
 - Test all buttons from a fresh copied file.
 - Create demo version with fake student data.
 - Prepare portfolio/presentation summary.
+
+Commit v1.2 (cleanup, once smoke-tested)
+Fresh-copy test — make an actual copy, run it start to finish, confirm it self-configures and the relay works (this is the real handoff validation)
+Then sheet protection / hiding backend sheets
+Then the demo/fake-data version for portfolio
+Trigger cleanup as the noted future enhancement
+*/
+
+/*
+ARCHITECTURE NOTES:
+- Dashboard buttons call user-facing functions.
+- generateParentLettersOneClick() runs setup validation, CSV import, data processing, and packet generation.
+- Packet generation uses time-based triggers to continue automatically when Apps Script time limits are reached.
+- Letter Processed flags in Processed Data act as resume memory.
+- hasUnprocessedTeachers_() determines whether the relay continues or stops.
+- Dashboard status writes use getStatusRange_() so status updates work in both user-click and trigger contexts.
 */
 
 /*************************************************
@@ -414,11 +430,7 @@ function clearDataKeepHeaders_(sheet) {
   }
 }
 
-function storeIdNow() {
-  PropertiesService.getScriptProperties()
-    .setProperty("SPREADSHEET_ID", SpreadsheetApp.getActiveSpreadsheet().getId());
-  Logger.log("Stored ID: " + SpreadsheetApp.getActiveSpreadsheet().getId());
-}
+
 /*************************************************
  * LETTER GENERATION
  *************************************************/
@@ -654,7 +666,7 @@ const templateFile = DriveApp.getFileById(templateDocId);
 const packetFileCopy = templateFile.makeCopy(docName, outputFolder);
 
 const packetDoc = DocumentApp.openById(packetFileCopy.getId());
-Logger.log("Packet Doc ID: " + packetDoc.getId());
+
 
 const packetBody = packetDoc.getBody();
 packetBody.clear();
@@ -793,7 +805,8 @@ function testHasUnprocessed() {
 }
 
 /*************************************************
- * TESTING / DIAGNOSTICS
+ * DEVELOPER UTILITIES
+ * Manual tests and maintenance helpers.
  *************************************************/
  function testLogoAccess() {
   const settings = getSettings_();
@@ -840,9 +853,8 @@ function testLetterSetup() {
   Logger.log("Template Doc ID: " + settings["Template Doc ID"]);
   Logger.log("Output Folder ID: " + settings["Output Folder ID"]);
 
-  const processedSheet = SpreadsheetApp
-    .getActiveSpreadsheet()
-    .getSheetByName("Processed Data");
+  const processedSheet = getSpreadsheet_()
+  .getSheetByName("Processed Data");
 
   const data = processedSheet.getDataRange().getValues();
 
@@ -859,10 +871,10 @@ function testLastRunLocation() {
 }
 
 function testPacketDetail() {
-  const ss = getSpreadsheet_();
-
-  ss.getRangeByName("Status_PacketsCreated_Detail")
-    .setValue("TESTING PACKET DETAIL TEXT");
+  setStatus_(
+    "Status_PacketsCreated_Detail",
+    "TESTING PACKET DETAIL TEXT"
+  );
 }
 
 function testProgressBar() {
@@ -885,30 +897,6 @@ function testOneClickNow() {
   generateParentLettersOneClick();
 }
 
-function diagnoseSchoolName() {
-  const ss = getSpreadsheet_();
-  Logger.log("Spreadsheet: " + (ss ? ss.getName() : "NULL"));
-  const range = ss.getRangeByName("School_Name");
-  Logger.log("School_Name range: " + (range ? range.getA1Notation() : "NULL"));
-  if (range) {
-    Logger.log("Value: " + range.getValue());
-  }
-}
-
-function diagnoseRanges() {
-  const ss = getSpreadsheet_();
-  ["School_Name", "Signer_Name", "Letter_Date"].forEach(name => {
-    const r = ss.getRangeByName(name);
-    Logger.log(name + ": " + (r ? r.getA1Notation() : "NULL"));
-  });
-}
-
-function diagnoseAssessment() {
-  const ss = getSpreadsheet_();
-  const r = ss.getRangeByName("Assessment_Window");
-  Logger.log("Assessment_Window: " + (r ? r.getA1Notation() : "NULL"));
-  if (r) Logger.log("Value: " + r.getValue());
-}
 
 /*************************************************
  * LETTER HELPERS
@@ -1068,14 +1056,7 @@ function setDashboardStatus_(statusName, icon, text) {
     safeSetNamedRange_(target.text, text);
   }
 }
-function testDashboardNamedRanges() {
-  const ss = getSpreadsheet_();
 
-  Logger.log("Assessment Window: " + ss.getRangeByName("Assessment_Window").getValue());
-  Logger.log("Letter Date: " + ss.getRangeByName("Letter_Date").getDisplayValue());
-  Logger.log("School Name: " + ss.getRangeByName("School_Name").getValue());
-  Logger.log("Signer Name: " + ss.getRangeByName("Signer_Name").getValue());
-}
 
 function testDashboardStatus() {
   setDashboardStatus_("Acadience File Found", "✓", "Ready");
@@ -1091,27 +1072,22 @@ function testDashboardStatus() {
   getSpreadsheet_().getRangeByName("Status_LastRun_Icon").setValue("◷");
 }
 
-function testStatusNamedRanges() {
+function testDashboardNamedRanges() {
   const ss = getSpreadsheet_();
 
-  const names = [
-    "Status_FileFound_Icon",
-    "Status_FileFound_Text",
-    "Status_DataImported_Icon",
-    "Status_DataImported_Text",
-    "Status_DataProcessed_Icon",
-    "Status_DataProcessed_Text",
-    "Status_PacketsCreated_Icon",
-    "Status_PacketsCreated_Detail",
-    "Status_LastRun",
-    "Status_File_Pill",
-    "Status_Packets_Pill",
-    "Status_LastRun_Icon"
-  ];
-
-  names.forEach(name => {
+  [
+    "Assessment_Window",
+    "Letter_Date",
+    "School_Name",
+    "Signer_Name"
+  ].forEach(name => {
     const range = ss.getRangeByName(name);
-    Logger.log(name + ": " + (range ? "FOUND" : "MISSING"));
+
+    if (range) {
+      Logger.log(name + ": OK → " + range.getSheet().getName() + "!" + range.getA1Notation());
+    } else {
+      Logger.log(name + ": MISSING");
+    }
   });
 }
 
