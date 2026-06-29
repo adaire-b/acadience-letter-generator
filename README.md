@@ -4,7 +4,7 @@
 
 ---
 
-![Workflow Architecture](assets/architecture-diagram.png)
+![Workflow Architecture](Assets/architecture-diagram.png)
 *Figure 1. Workflow architecture showing how benchmark assessment data moves from import through processing to automated teacher packet generation.*
 
 ---
@@ -40,12 +40,12 @@ I built an assessment operations dashboard in Google Sheets and Apps Script. It 
 
 A teacher exports their benchmark data, drops the file in a folder, and clicks one button. The system imports the newest file, normalizes it, filters to the selected assessment window, groups students by teacher, and generates a formatted Google Doc packet for each teacher — automatically applying the correct window, template, and formatting every time, so teachers get the right packets without manual setup.
 
-![Parent Communication Dashboard](assets/dashboard-main.png)
+![Parent Communication Dashboard](Assets/dashboard-main.png)
 *Figure 2. The Parent Communication Dashboard — a single button triggers the full workflow, with live status and progress visible below.*
 
 I also made a deliberate design choice about the interface. Rather than accept that a Google Sheet "looks like a spreadsheet," I built it to behave like an internal business application — a guided control panel with numbered steps, live status indicators, a progress bar, setup validation, and a built-in setup wizard and instructions page so a non-technical user can run it without help.
 
-![Setup Wizard](assets/setup-wizard.png)
+![Setup Wizard](Assets/setup-wizard.png)
 *Figure 3. A guided setup wizard replaces manual configuration with a step-by-step onboarding experience, validating required resources before packet generation.*
 
 ## A Real Technical Challenge
@@ -54,7 +54,7 @@ Google Apps Script caps a single execution at roughly six minutes on standard ac
 
 I designed around the constraint rather than against it, building a self-continuing relay: the workflow processes as many teacher packets as it can within a safe time budget, then automatically schedules its own continuation and resumes where it left off until every packet is complete. Progress is tracked in the data itself, so the system always knows what's done and what remains — which also means it can recover if anything interrupts it mid-run.
 
-![Processing Dashboard](assets/dashboard-processing.png)
+![Processing Dashboard](Assets/dashboard-processing.png)
 *Figure 4. Processing dashboard showing packet generation in progress — 1 of 8 teacher packets created, 13% complete.*
 
 This transformed the experience from "keep clicking until it finishes" to "click once and walk away." Getting it reliable meant load-testing against a full school-sized dataset, diagnosing timing-sensitive edge cases in how the platform schedules background work, and tuning the system so it completes cleanly without running into the execution ceiling. That debugging was some of the most valuable engineering work in the project, because it is where the difference between "a demo that works once" and "a tool a colleague can depend on" actually lives.
