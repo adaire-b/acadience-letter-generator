@@ -301,18 +301,18 @@ function getStatusRange_(name) {
   const named = ss.getRangeByName(name);
   if (named) return named;
 
-  // Fallback for trigger context: look up the cell address directly
+ // Fallback for trigger context: look up the cell address directly
   const cellMap = {
-    "Status_FileFound_Icon": "G28",
-    "Status_FileFound_Text": "J28",
-    "Status_File_Pill": "I28",
-    "Status_PacketsCreated_Icon": "G29",
-    "Status_Packets_Pill": "I29",
-    "Status_Packets_ProgressBar": "J29:L29",
-    "Status_Packets_ProgressPercent": "M29",
-    "Status_PacketsCreated_Detail": "I30:N30",
-    "Status_LastRun_Icon": "G30",
-    "Status_LastRun": "H31"
+    "Status_FileFound_Icon": "F29:F30",
+    "Status_FileFound_Text": "J30:L30",
+    "Status_File_Pill": "H30",
+    "Status_PacketsCreated_Icon": "F31",
+    "Status_Packets_Pill": "H31",
+    "Status_Packets_ProgressBar": "J31:L31",
+    "Status_Packets_ProgressPercent": "M31",
+    "Status_PacketsCreated_Detail": "J32:N32",
+    "Status_LastRun_Icon": "F32",
+    "Status_LastRun": "H32"
   };
 
   const address = cellMap[name];
@@ -447,9 +447,10 @@ function generateTestLetter() {
   if (!outputFolderId) throw new Error("Missing Output Folder ID in Settings tab.");
 
 
- const schoolName = ss.getRangeByName("School_Name").getValue();
-const signerName = ss.getRangeByName("Signer_Name").getValue();
-const letterDate = ss.getRangeByName("Letter_Date").getDisplayValue();
+ const dash = ss.getSheetByName("Dashboard");
+const schoolName = dash.getRange("K17").getValue();
+const signerName = dash.getRange("K20").getValue();
+const letterDate = dash.getRange("L14").getDisplayValue();
 
   const processedSheet = ss.getSheetByName("Processed Data");
   const data = processedSheet.getDataRange().getValues();
@@ -546,6 +547,15 @@ function continuePacketGeneration_() {
   }
 }
 
+function deleteContinuationTriggers_() {
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(t => {
+    if (t.getHandlerFunction() === "continuePacketGeneration_") {
+      ScriptApp.deleteTrigger(t);
+    }
+  });
+}
+
 function generateTeacherPdfs() {
   startTeacherPacketWorkflow_();
 }
@@ -639,6 +649,11 @@ if (options.startTeacherIndex !== undefined || options.limitTeachers) {
   teacherNames = teacherNames.slice(0, options.limitTeachers);
 }
 
+  // Per-teacher time budgeting: stop before starting a teacher we can't
+  // comfortably finish. One teacher takes ~40s; we reserve a 90s buffer so
+  // a leg never begins a teacher it might not complete before the ceiling.
+  // The leg ends cleanly, and the relay's next leg picks up the remaining
+  // teachers. (Future hardening "Option A": resume mid-teacher per-student.)
   for (let t = 0; t < teacherNames.length; t++) {
     const teacherName = teacherNames[t];
 
@@ -677,6 +692,7 @@ packetBody.clear();
       const replacements = {
         "{{SCHOOL_NAME}}": schoolName,
         "{{ASSESSMENT_WINDOW}}": season,
+        "{{WINDOW_CODE}}": getValue_(row, headerMap, "Assessment Window"),
         "{{SCHOOL_YEAR}}": getValue_(row, headerMap, "School Year"),
         "{{TEACHER_NAME}}": getValue_(row, headerMap, "Teacher Name"),
         "{{GRADE}}": getValue_(row, headerMap, "Grade"),
@@ -1092,6 +1108,13 @@ function testDashboardNamedRanges() {
 }
 
 function updatePacketStatus_(packetsCreated, studentsProcessed, skippedCount) {
+  // Lock the FileFound row to its resolved state on completion.
+  // Without this, the file icon's final state depends on nothing having
+  // reset it mid-run — re-asserting it here guarantees a ✓ at the end
+  // in both click and trigger context.
+  setStatus_("Status_FileFound_Icon", "✓");
+  setStatus_("Status_FileFound_Text", "Acadience data processed.");
+
   setStatus_("Status_PacketsCreated_Icon", "✓");
   setStatus_("Status_Packets_Pill", "COMPLETE");
 
@@ -1170,11 +1193,11 @@ function appendSkippedStudent_(row, headerMap, reason) {
 
 function openHelpSheet() {
   const ss = getSpreadsheet_();
-  const helpSheet = ss.getSheetByName("Help");
+  const helpSheet = ss.getSheetByName("Export Guide");
 
   if (!helpSheet) {
     SpreadsheetApp.getUi().alert(
-      'Help sheet not found. Please verify the sheet is named "Help".'
+      'Export Guide sheet not found. Please verify the sheet is named "Export Guide".'
     );
     return;
   }
@@ -1411,10 +1434,24 @@ function generateParentLettersOneClick() {
 
     generateTeacherPdfs();
 
-    ui.alert(
-      "Teacher packet generation complete.\n\n" +
-      "Packets have been saved to the Output Folder."
-    );
+    if (hasUnprocessedTeachers_()) {
+      ScriptApp.newTrigger("continuePacketGeneration_")
+        .timeBased()
+        .after(60 * 1000)
+        .create();
+
+      getSpreadsheet_().toast(
+        "First batch done. The rest finishes automatically over the next " +
+        "few minutes. Watch the Last Run status — it fills in when complete.",
+        "Still working…",
+        15
+      );
+    } else {
+      ui.alert(
+        "Teacher packet generation complete.\n\n" +
+        "Packets have been saved to the Output Folder."
+      );
+    }
 
   } catch (error) {
     setWorkflowErrorStatus_(error);
@@ -1465,3 +1502,6 @@ function trySetNamedRange_(rangeName, value) {
     range.setValue(value);
   }
 }
+
+
+
